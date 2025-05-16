@@ -2,69 +2,59 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\User;
+use App\Http\Requests\ProfileUpdateRequest;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\Rules;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Redirect;
+use Illuminate\View\View;
 
 class ProfileController extends Controller
 {
     /**
-     * Profil düzenleme sayfasını göster
+     * Display the user's profile form.
      */
-    public function edit()
+    public function edit(Request $request): View
     {
         return view('profile.edit', [
-            'user' => Auth::user(),
+            'user' => $request->user(),
         ]);
     }
 
     /**
-     * Profil bilgilerini güncelle
+     * Update the user's profile information.
      */
-    public function update(Request $request)
+    public function update(ProfileUpdateRequest $request): RedirectResponse
     {
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|email|max:255|unique:users,email,' . Auth::id(),
-        ]);
+        $request->user()->fill($request->validated());
 
-        $user = Auth::user();
-        $user->name = $request->name;
-
-        if ($user->email !== $request->email) {
-            $user->email = $request->email;
-            $user->email_verified_at = null;
+        if ($request->user()->isDirty('email')) {
+            $request->user()->email_verified_at = null;
         }
 
-        $user->save();
+        $request->user()->save();
 
-        return back()->with('status', 'profile-updated');
+        return Redirect::route('profile.edit')->with('status', 'profile-updated');
     }
 
     /**
-     * Şifre güncelle
+     * Delete the user's account.
      */
-    public function updatePassword(Request $request)
+    public function destroy(Request $request): RedirectResponse
     {
-        $request->validate([
-            'current_password' => 'required|string',
-            'password' => ['required', 'confirmed', Rules\Password::defaults()],
+        $request->validateWithBag('userDeletion', [
+            'password' => ['required', 'current_password'],
         ]);
 
-        $user = Auth::user();
+        $user = $request->user();
 
-        if (!Hash::check($request->current_password, $user->password)) {
-            throw ValidationException::withMessages([
-                'current_password' => ['Mevcut şifreniz doğru değil.'],
-            ]);
-        }
+        Auth::logout();
 
-        $user->password = Hash::make($request->password);
-        $user->save();
+        $user->delete();
 
-        return back()->with('status', 'password-updated');
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return Redirect::to('/');
     }
 }
